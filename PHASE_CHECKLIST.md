@@ -33,7 +33,7 @@ Implementation checklist derived from the approved **5-Minute Options Scalper Bo
 
 # Phase 0 — Pre-Implementation Decisions and Foundation
 
-> **Status as of 2026-07-29:** Foundation implemented; external credentials, PostgreSQL runtime verification, frontend dependency verification, and owner approval remain before the gate closes.
+> **Status as of 2026-07-30:** Phase 0 foundation is complete. The local runtime, PostgreSQL migration, backend and frontend validation, GitHub Actions CI, repository initialization, secret protection, and line-ending standards have been verified. Public API credentials and live Public connectivity remain Phase 1 operator tasks.
 
 ## 0.1 Resolve Configurable Values
 
@@ -78,9 +78,11 @@ Implementation checklist derived from the approved **5-Minute Options Scalper Bo
 ### Phase 0 Completion Gate
 
 - [x] All unresolved Version 1 settings have documented defaults.
-- [ ] Backend, frontend, database, tests, and migrations run locally. **Current:** backend tests pass; PostgreSQL migration and frontend dependency checks require the local development machine.
-- [ ] Broker-neutral interfaces and canonical data models are approved. **Current:** implemented and test-protected; awaiting owner review.
+- [x] Backend, frontend, database, tests, and migrations run locally.
+- [x] Broker-neutral interfaces and canonical data models are approved.
 - [x] No secrets exist in the repository.
+- [x] GitHub Actions CI passes on `main`.
+- [x] Repository line endings are standardized through `.gitattributes`.
 
 ---
 
