@@ -1,0 +1,91 @@
+from enum import StrEnum
+
+
+class ExecutionMode(StrEnum):
+    PAPER = "PAPER"
+    SHADOW = "SHADOW"
+    APPROVAL = "APPROVAL"
+    LIVE = "LIVE"
+
+
+class MarketDataProviderType(StrEnum):
+    PUBLIC = "PUBLIC"
+
+
+class ExecutionBrokerType(StrEnum):
+    INTERNAL_PAPER = "INTERNAL_PAPER"
+    ALPACA_PAPER = "ALPACA_PAPER"
+    WEBULL = "WEBULL"
+
+
+class OrderState(StrEnum):
+    CREATED = "CREATED"
+    RESERVED = "RESERVED"
+    SUBMITTED = "SUBMITTED"
+    WORKING = "WORKING"
+    PARTIALLY_FILLED = "PARTIALLY_FILLED"
+    REPLACED = "REPLACED"
+    FILLED = "FILLED"
+    CANCEL_REQUESTED = "CANCEL_REQUESTED"
+    CANCELED = "CANCELED"
+    REJECTED = "REJECTED"
+    EXPIRED = "EXPIRED"
+
+
+class CashEventType(StrEnum):
+    INITIAL_DEPOSIT = "INITIAL_DEPOSIT"
+    BUY_PREMIUM = "BUY_PREMIUM"
+    SELL_PROCEEDS = "SELL_PROCEEDS"
+    COMMISSION = "COMMISSION"
+    REGULATORY_FEE = "REGULATORY_FEE"
+    ADJUSTMENT = "ADJUSTMENT"
+    RESET = "RESET"
+
+
+class SignalState(StrEnum):
+    DISABLED = "DISABLED"
+    MONITORING = "MONITORING"
+    SETUP_DETECTED = "SETUP_DETECTED"
+    CONFIRMING = "CONFIRMING"
+    QUALIFIED = "QUALIFIED"
+    INVALIDATED = "INVALIDATED"
+    COOLDOWN = "COOLDOWN"
+    BLOCKED = "BLOCKED"
+
+
+class ExitReason(StrEnum):
+    HARD_STOP = "HARD_STOP"
+    TECHNICAL_STOP = "TECHNICAL_STOP"
+    TIME_STOP = "TIME_STOP"
+    TARGET_1 = "TARGET_1"
+    TARGET_2 = "TARGET_2"
+    TARGET_3 = "TARGET_3"
+    RUNNER_EXIT = "RUNNER_EXIT"
+    FORCE_FLAT = "FORCE_FLAT"
+    EMERGENCY_STOP = "EMERGENCY_STOP"
+    MANUAL = "MANUAL"
+
+
+class OptionRight(StrEnum):
+    CALL = "CALL"
+    PUT = "PUT"
+
+
+class OrderSide(StrEnum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class OrderType(StrEnum):
+    LIMIT = "LIMIT"
+    STOP_LIMIT = "STOP_LIMIT"
+
+
+class TimeInForce(StrEnum):
+    DAY = "DAY"
+
+
+class PositionState(StrEnum):
+    OPEN = "OPEN"
+    CLOSING = "CLOSING"
+    CLOSED = "CLOSED"

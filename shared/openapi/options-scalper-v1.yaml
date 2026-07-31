@@ -1,0 +1,85 @@
+openapi: 3.1.0
+info:
+  title: Options Intraday Scalper API
+  version: 1.0.0
+  description: Version 1 paper-trading API contract.
+servers:
+  - url: http://localhost:8000/api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service health and enforced execution mode.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /meta/config:
+    get:
+      operationId: getPublicConfig
+      responses:
+        '200':
+          description: Non-secret runtime configuration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicConfigResponse'
+components:
+  schemas:
+    ExecutionMode:
+      type: string
+      enum: [PAPER, SHADOW, APPROVAL, LIVE]
+    MarketDataProvider:
+      type: string
+      enum: [PUBLIC]
+    ExecutionBroker:
+      type: string
+      enum: [INTERNAL_PAPER, ALPACA_PAPER, WEBULL]
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required: [status, apiVersion, executionMode, marketDataProvider, executionBroker, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        apiVersion:
+          type: string
+        executionMode:
+          $ref: '#/components/schemas/ExecutionMode'
+        marketDataProvider:
+          $ref: '#/components/schemas/MarketDataProvider'
+        executionBroker:
+          $ref: '#/components/schemas/ExecutionBroker'
+        timestamp:
+          type: string
+          format: date-time
+    PublicConfigResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - environment
+        - executionMode
+        - strategyBuyingPowerFraction
+        - underlyingQuoteStaleSeconds
+        - optionQuoteStaleSeconds
+        - completedCandleGraceSeconds
+      properties:
+        environment:
+          type: string
+        executionMode:
+          $ref: '#/components/schemas/ExecutionMode'
+        strategyBuyingPowerFraction:
+          type: string
+          pattern: '^0\\.[0-9]+$'
+        underlyingQuoteStaleSeconds:
+          type: integer
+          minimum: 1
+        optionQuoteStaleSeconds:
+          type: integer
+          minimum: 1
+        completedCandleGraceSeconds:
+          type: integer
+          minimum: 0
