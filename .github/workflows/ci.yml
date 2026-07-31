@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: options_scalper
+          POSTGRES_USER: scalper
+          POSTGRES_PASSWORD: scalper
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U scalper -d options_scalper"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+      - run: uv sync --all-groups
+        working-directory: backend
+      - run: uv run ruff check src tests
+        working-directory: backend
+      - run: uv run ruff format --check src tests
+        working-directory: backend
+      - run: uv run mypy src
+        working-directory: backend
+      - run: uv run pytest
+        working-directory: backend
+      - run: uv run alembic upgrade head
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://scalper:scalper@localhost:5432/options_scalper
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run typecheck
+        working-directory: frontend
+      - run: npm test -- --run
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
