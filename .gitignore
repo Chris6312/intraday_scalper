@@ -36,3 +36,6 @@ logs/
 postgres-data/
 .run/
 backups/
+
+# TypeScript incremental build state
+*.tsbuildinfo
