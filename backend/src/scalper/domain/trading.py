@@ -100,7 +100,6 @@ class Position(DomainModel):
     first_fill_at: datetime
     updated_at: datetime
 
-
     @model_validator(mode="after")
     def validate_open_quantity(self) -> "Position":
         if self.open_quantity > self.initial_quantity:

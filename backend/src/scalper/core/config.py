@@ -1,7 +1,7 @@
 from decimal import Decimal
 from functools import lru_cache
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from scalper.core.enums import ExecutionBrokerType, ExecutionMode, MarketDataProviderType
@@ -65,7 +65,9 @@ class Settings(BaseSettings):
     @classmethod
     def validate_strategy_fraction(cls, value: Decimal) -> Decimal:
         if value <= 0 or value > Decimal("0.50"):
-            raise ValueError("strategy buying-power fraction must be greater than 0 and at most 0.50")
+            raise ValueError(
+                "strategy buying-power fraction must be greater than 0 and at most 0.50"
+            )
         return value
 
     @field_validator(
