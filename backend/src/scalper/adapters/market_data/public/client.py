@@ -11,6 +11,7 @@ from pydantic import SecretStr, ValidationError
 
 from scalper.core.config import Settings
 from scalper.core.time import require_aware, utc_now
+from scalper.domain.market import Quote
 
 from .errors import (
     PublicAuthenticationError,
@@ -20,7 +21,7 @@ from .errors import (
     PublicResponseError,
     PublicTransportError,
 )
-from .models import PublicAccessTokenResponse
+from .models import PublicAccessTokenResponse, PublicQuotesResponse
 
 Clock = Callable[[], datetime]
 Sleeper = Callable[[float], Awaitable[None]]
@@ -110,6 +111,66 @@ class PublicMarketDataClient:
             self._access_token = access_token
             self._access_token_expires_at = issued_at + timedelta(minutes=self._token_ttl_minutes)
             return access_token
+
+    async def get_quote(self, symbol: str) -> Quote:
+        """Retrieve and map one underlying-equity quote."""
+
+        normalized_symbol = symbol.strip().upper()
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+
+        response = await self.request(
+            "POST",
+            f"/userapigateway/marketdata/{self._account_id}/quotes",
+            json_body={
+                "instruments": [
+                    {
+                        "symbol": normalized_symbol,
+                        "type": "EQUITY",
+                    }
+                ]
+            },
+        )
+        received_timestamp = self._now()
+
+        try:
+            payload = response.json()
+            quote_response = PublicQuotesResponse.model_validate(payload)
+        except (ValueError, ValidationError) as exc:
+            raise PublicResponseError("Public quote response was invalid") from exc
+
+        matching_quotes = [
+            quote
+            for quote in quote_response.quotes
+            if quote.instrument.symbol.upper() == normalized_symbol
+        ]
+        if len(matching_quotes) != 1:
+            raise PublicResponseError(
+                "Public quote response did not contain exactly one requested equity"
+            )
+
+        public_quote = matching_quotes[0]
+        if public_quote.outcome != "SUCCESS":
+            raise PublicResponseError("Public quote request did not succeed")
+
+        # A two-sided canonical quote is only as fresh as its older side.
+        source_timestamp = min(
+            public_quote.bid_timestamp,
+            public_quote.ask_timestamp,
+        ).astimezone(UTC)
+
+        try:
+            return Quote(
+                symbol=public_quote.instrument.symbol.upper(),
+                bid=public_quote.bid,
+                ask=public_quote.ask,
+                bid_size=public_quote.bid_size,
+                ask_size=public_quote.ask_size,
+                source_timestamp=source_timestamp,
+                received_timestamp=received_timestamp,
+            )
+        except ValidationError as exc:
+            raise PublicResponseError("Public quote response was unusable") from exc
 
     async def request(
         self,
