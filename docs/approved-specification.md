@@ -145,13 +145,24 @@ The 3:30 PM force-flat rule overrides all other holding-time and profit-target r
 
 ## 5. Chart and Indicator Rules
 
-All signals are based on the underlying security's completed five-minute candles.
+The strategy uses separate entry and technical-exit timeframes:
 
-### Indicators
+- Entry setup, confirmation, VWAP, EMA, and MACD calculations use completed five-minute candles.
+- The EMA technical exit uses completed fifteen-minute candles.
+- Option-price hard stops, profit targets, break-even stops, time stops, emergency exits, and the 3:30 PM force-flat rule do not wait for a fifteen-minute candle.
+
+### Entry indicators — five-minute
 
 - Session VWAP
 - 9-period EMA
 - MACD 12/26/9
+
+### Technical-exit indicator — fifteen-minute
+
+- Calculate the 9-period EMA only from completed fifteen-minute candles.
+- Build each fifteen-minute candle from three contiguous, completed, regular-session five-minute candles.
+- Align fifteen-minute candles to regular-session boundaries beginning at 9:30 AM ET.
+- If any source five-minute candle is missing, stale, or incomplete, do not create the fifteen-minute candle or evaluate the technical exit.
 
 ### Direction filter
 
@@ -431,8 +442,10 @@ Hard stop = average option fill × 0.80
 
 ### Technical stop
 
-- Calls exit when a completed underlying candle closes below the 9 EMA.
-- Puts exit when a completed underlying candle closes above the 9 EMA.
+- Calls exit when a completed fifteen-minute underlying candle closes below the fifteen-minute 9 EMA.
+- Puts exit when a completed fifteen-minute underlying candle closes above the fifteen-minute 9 EMA.
+- Evaluate the technical stop only after a valid fifteen-minute candle completes.
+- The option-price hard stop, profit targets, break-even stop, 30-minute time stop, emergency exit, and 3:30 PM force-flat rule remain continuously active and may exit the position before a fifteen-minute candle completes.
 
 ### Time stop
 
@@ -454,7 +467,7 @@ Approved targets:
 - Target 1: +30%
 - Target 2: +50%
 - Target 3: +75%
-- Runner: exit on EMA violation, time stop, hard stop, or 3:30 PM force-flat
+- Runner: exit on a completed fifteen-minute EMA violation, time stop, hard stop, or 3:30 PM force-flat
 
 | Starting quantity | +30% | +50% | +75% | Runner |
 |---:|---:|---:|---:|---:|
@@ -475,6 +488,7 @@ Target 3 = average fill × 1.75
 After Target 1:
 
 - Move the remaining stop to break-even plus estimated round-trip fees.
+- Keep the break-even stop continuously active; it does not wait for a fifteen-minute candle.
 - Never move a stop in a way that increases risk.
 - Profit targets and stops use executable option prices rather than an optimistic mark.
 

@@ -139,10 +139,11 @@ Ledger requirements:
 
 Underlying data:
 
-- [ ] Fetch underlying quotes for SPY, QQQ, NVDA, TSLA, GOOGL, and AAPL.
-- [ ] Fetch five-minute OHLCV bars.
-- [ ] Build completed five-minute candles only.
-- [ ] Track quote and candle timestamps.
+- [x] Fetch underlying quotes for SPY, QQQ, NVDA, TSLA, GOOGL, and AAPL.
+- [x] Fetch five-minute OHLCV bars.
+- [x] Build completed five-minute candles only.
+- [x] Track quote and candle timestamps.
+- [ ] Build completed fifteen-minute candles from three contiguous completed five-minute regular-session candles for technical exits.
 - [ ] Detect stale underlying data.
 
 Option data:
@@ -170,17 +171,22 @@ Expiration rules:
 
 ## 1.3 Indicator Engine
 
-- [ ] Calculate session VWAP from completed session data.
-- [ ] Calculate the 9-period EMA.
-- [ ] Calculate MACD 12/26/9.
-- [ ] Calculate the MACD histogram.
-- [ ] Compare the current histogram with the prior histogram.
-- [ ] Recalculate only when a five-minute candle completes.
-- [ ] Prevent incomplete candles from creating signals.
-- [ ] Persist indicator snapshots used for each decision.
-- [ ] Unit-test indicator calculations against known reference values.
+- [ ] Calculate session VWAP from completed five-minute session data.
+- [ ] Calculate the five-minute 9-period EMA for entries.
+- [ ] Calculate five-minute MACD 12/26/9.
+- [ ] Calculate the five-minute MACD histogram.
+- [ ] Compare the current five-minute histogram with the prior histogram.
+- [ ] Calculate the fifteen-minute 9-period EMA for technical exits.
+- [ ] Recalculate entry indicators only when a five-minute candle completes.
+- [ ] Recalculate the technical-exit EMA only when a fifteen-minute candle completes.
+- [ ] Prevent incomplete five-minute candles from creating signals.
+- [ ] Prevent incomplete, stale, missing, or non-contiguous five-minute source candles from producing a fifteen-minute technical-exit candle.
+- [ ] Persist indicator snapshots with their timeframe for each decision.
+- [ ] Unit-test five-minute entry indicators and the fifteen-minute exit EMA against known reference values.
 
 ## 1.4 Strategy Engine — EMA Bounce
+
+- [ ] Evaluate all EMA-bounce setup, confirmation, and entry conditions from completed five-minute candles only.
 
 Call setup:
 
@@ -354,9 +360,11 @@ Hard stop:
 
 Technical stop:
 
-- [ ] Exit calls when a completed underlying candle closes below the 9 EMA.
-- [ ] Exit puts when a completed underlying candle closes above the 9 EMA.
-- [ ] Prevent incomplete candles from triggering the technical stop.
+- [ ] Exit calls when a completed fifteen-minute underlying candle closes below the fifteen-minute 9 EMA.
+- [ ] Exit puts when a completed fifteen-minute underlying candle closes above the fifteen-minute 9 EMA.
+- [ ] Build each fifteen-minute candle from exactly three contiguous completed regular-session five-minute candles.
+- [ ] Prevent missing, stale, incomplete, or non-contiguous source candles from triggering the technical stop.
+- [ ] Keep the option-price hard stop, profit targets, break-even stop, 30-minute time stop, emergency exit, and 3:30 PM force-flat rule continuously active without waiting for a fifteen-minute candle.
 
 Time and end-of-day stops:
 
@@ -374,7 +382,7 @@ Scale-out ladder:
 - [ ] Use executable option prices for target decisions.
 - [ ] After Target 1, move the remaining stop to break-even plus estimated round-trip fees.
 - [ ] Never move a stop in a direction that increases risk.
-- [ ] Keep the runner until EMA violation, time stop, hard stop, or force-flat.
+- [ ] Keep the runner until a completed fifteen-minute EMA violation, time stop, hard stop, or force-flat.
 - [ ] Persist every target fill and stop adjustment.
 
 ## 1.10 P&L and Performance Service
