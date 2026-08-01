@@ -11,7 +11,7 @@ from pydantic import SecretStr, ValidationError
 
 from scalper.core.config import Settings
 from scalper.core.time import require_aware, utc_now
-from scalper.domain.market import Quote
+from scalper.domain.market import Bar, Quote
 
 from .errors import (
     PublicAuthenticationError,
@@ -21,7 +21,7 @@ from .errors import (
     PublicResponseError,
     PublicTransportError,
 )
-from .models import PublicAccessTokenResponse, PublicQuotesResponse
+from .models import PublicAccessTokenResponse, PublicBarsResponse, PublicQuotesResponse
 
 Clock = Callable[[], datetime]
 Sleeper = Callable[[float], Awaitable[None]]
@@ -32,6 +32,8 @@ class PublicMarketDataClient:
 
     _AUTH_PATH = "/userapiauthservice/personal/access-tokens"
     _USER_AGENT = "options-intraday-scalper/0.1.0"
+    _FIVE_MINUTE_TIMEFRAME = "5m"
+    _FIVE_MINUTE_DURATION = timedelta(minutes=5)
 
     def __init__(
         self,
@@ -111,6 +113,82 @@ class PublicMarketDataClient:
             self._access_token = access_token
             self._access_token_expires_at = issued_at + timedelta(minutes=self._token_ttl_minutes)
             return access_token
+
+    async def get_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> tuple[Bar, ...]:
+        """Retrieve completed regular-session five-minute equity bars."""
+
+        normalized_symbol = symbol.strip().upper()
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+
+        normalized_timeframe = self._normalize_five_minute_timeframe(timeframe)
+        start_utc = self._normalize_optional_bound(start, "start")
+        end_utc = self._normalize_optional_bound(end, "end")
+        if start_utc is not None and end_utc is not None and end_utc <= start_utc:
+            raise ValueError("end must be after start")
+
+        response = await self.request(
+            "GET",
+            f"/userapigateway/historicdata/EQUITY/{normalized_symbol}/DAY/FIVE_MINUTES",
+            params={"tradingSessionToggle": "REGULAR_HOURS"},
+        )
+        received_timestamp = self._now()
+
+        try:
+            payload = response.json()
+            bars_response = PublicBarsResponse.model_validate(payload)
+        except (ValueError, ValidationError) as exc:
+            raise PublicResponseError("Public bars response was invalid") from exc
+
+        if bars_response.symbol.upper() != normalized_symbol:
+            raise PublicResponseError("Public bars response symbol did not match the request")
+
+        public_bars = sorted(
+            bars_response.regular_market.bars,
+            key=lambda bar: bar.timestamp,
+        )
+        timestamps = [bar.timestamp.astimezone(UTC) for bar in public_bars]
+        if len(timestamps) != len(set(timestamps)):
+            raise PublicResponseError("Public bars response contained duplicate timestamps")
+
+        canonical_bars: list[Bar] = []
+        for public_bar, open_time in zip(public_bars, timestamps, strict=True):
+            # Public documents a single bar timestamp but does not label it as open or close.
+            # This adapter treats it as the interval open pending a controlled smoke test.
+            close_time = open_time + self._FIVE_MINUTE_DURATION
+
+            if close_time > received_timestamp:
+                continue
+            if start_utc is not None and open_time < start_utc:
+                continue
+            if end_utc is not None and close_time > end_utc:
+                continue
+
+            try:
+                canonical_bars.append(
+                    Bar(
+                        symbol=normalized_symbol,
+                        timeframe=normalized_timeframe,
+                        open_time=open_time,
+                        close_time=close_time,
+                        open=public_bar.open,
+                        high=public_bar.high,
+                        low=public_bar.low,
+                        close=public_bar.close,
+                        volume=public_bar.volume,
+                        is_complete=True,
+                    )
+                )
+            except ValidationError as exc:
+                raise PublicResponseError("Public bars response was unusable") from exc
+
+        return tuple(canonical_bars)
 
     async def get_quote(self, symbol: str) -> Quote:
         """Retrieve and map one underlying-equity quote."""
@@ -369,6 +447,22 @@ class PublicMarketDataClient:
 
     def _now(self) -> datetime:
         return require_aware(self._clock()).astimezone(UTC)
+
+    @classmethod
+    def _normalize_five_minute_timeframe(cls, value: str) -> str:
+        normalized = value.strip().upper().replace("-", "_").replace(" ", "_")
+        if normalized not in {"5M", "5MIN", "5_MINUTES", "FIVE_MINUTES"}:
+            raise ValueError("Public bars currently support only the five-minute timeframe")
+        return cls._FIVE_MINUTE_TIMEFRAME
+
+    @staticmethod
+    def _normalize_optional_bound(value: datetime | None, name: str) -> datetime | None:
+        if value is None:
+            return None
+        try:
+            return require_aware(value).astimezone(UTC)
+        except ValueError as exc:
+            raise ValueError(f"{name} must be timezone-aware") from exc
 
     @staticmethod
     def _read_required_secret(

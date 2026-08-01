@@ -43,3 +43,29 @@ class PublicQuotePayload(PublicModel):
 
 class PublicQuotesResponse(PublicModel):
     quotes: list[PublicQuotePayload]
+
+
+class PublicBarPayload(PublicModel):
+    timestamp: datetime
+    open: Decimal = Field(ge=0)
+    close: Decimal = Field(ge=0)
+    high: Decimal = Field(ge=0)
+    low: Decimal = Field(ge=0)
+    volume: int = Field(ge=0)
+
+    @field_validator("timestamp")
+    @classmethod
+    def require_aware_timestamp(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Public bar timestamps must be timezone-aware")
+        return value
+
+
+class PublicBarSeries(PublicModel):
+    bars: list[PublicBarPayload]
+
+
+class PublicBarsResponse(PublicModel):
+    symbol: str = Field(min_length=1)
+    period: Literal["DAY"]
+    regular_market: PublicBarSeries = Field(alias="regularMarket")
