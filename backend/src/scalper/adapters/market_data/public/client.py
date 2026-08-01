@@ -10,8 +10,8 @@ import httpx
 from pydantic import SecretStr, ValidationError
 
 from scalper.core.config import Settings
-from scalper.core.time import require_aware, utc_now
-from scalper.domain.market import Bar, Quote
+from scalper.core.time import EASTERN, require_aware, utc_now
+from scalper.domain.market import Bar, OptionExpiration, Quote
 
 from .errors import (
     PublicAuthenticationError,
@@ -21,7 +21,12 @@ from .errors import (
     PublicResponseError,
     PublicTransportError,
 )
-from .models import PublicAccessTokenResponse, PublicBarsResponse, PublicQuotesResponse
+from .models import (
+    PublicAccessTokenResponse,
+    PublicBarsResponse,
+    PublicOptionExpirationsResponse,
+    PublicQuotesResponse,
+)
 
 Clock = Callable[[], datetime]
 Sleeper = Callable[[float], Awaitable[None]]
@@ -189,6 +194,62 @@ class PublicMarketDataClient:
                 raise PublicResponseError("Public bars response was unusable") from exc
 
         return tuple(canonical_bars)
+
+    async def get_option_expirations(
+        self,
+        symbol: str,
+    ) -> tuple[OptionExpiration, ...]:
+        """Retrieve Public-listed option expirations for one equity."""
+
+        normalized_symbol = symbol.strip().upper()
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+
+        response = await self.request(
+            "POST",
+            f"/userapigateway/marketdata/{self._account_id}/option-expirations",
+            json_body={
+                "instrument": {
+                    "symbol": normalized_symbol,
+                    "type": "EQUITY",
+                }
+            },
+        )
+
+        try:
+            payload = response.json()
+            expiration_response = PublicOptionExpirationsResponse.model_validate(payload)
+        except (ValueError, ValidationError) as exc:
+            raise PublicResponseError("Public option-expirations response was invalid") from exc
+
+        if expiration_response.base_symbol.upper() != normalized_symbol:
+            raise PublicResponseError(
+                "Public option-expirations response symbol did not match the request"
+            )
+
+        expiration_dates = expiration_response.expirations
+        if len(expiration_dates) != len(set(expiration_dates)):
+            raise PublicResponseError(
+                "Public option-expirations response contained duplicate dates"
+            )
+
+        current_eastern_date = self._now().astimezone(EASTERN).date()
+        if any(expiration < current_eastern_date for expiration in expiration_dates):
+            raise PublicResponseError(
+                "Public option-expirations response contained an expired date"
+            )
+
+        try:
+            return tuple(
+                OptionExpiration(
+                    underlying=normalized_symbol,
+                    expiration=expiration,
+                    dte=(expiration - current_eastern_date).days,
+                )
+                for expiration in sorted(expiration_dates)
+            )
+        except ValidationError as exc:
+            raise PublicResponseError("Public option-expirations response was unusable") from exc
 
     async def get_quote(self, symbol: str) -> Quote:
         """Retrieve and map one underlying-equity quote."""

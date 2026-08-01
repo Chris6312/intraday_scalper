@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -43,6 +43,11 @@ class PublicQuotePayload(PublicModel):
 
 class PublicQuotesResponse(PublicModel):
     quotes: list[PublicQuotePayload]
+
+
+class PublicOptionExpirationsResponse(PublicModel):
+    base_symbol: str = Field(alias="baseSymbol", min_length=1)
+    expirations: list[date]
 
 
 class PublicBarPayload(PublicModel):
