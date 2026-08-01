@@ -76,7 +76,7 @@ class OptionContract(DomainModel):
     volume: int | None = Field(default=None, ge=0)
     open_interest: int | None = Field(default=None, ge=0)
     greeks: OptionGreeks | None = None
-    tick_size: Decimal = Field(gt=0)
+    tick_size: Decimal | None = Field(default=None, gt=0)
 
 
 class OptionChain(DomainModel):

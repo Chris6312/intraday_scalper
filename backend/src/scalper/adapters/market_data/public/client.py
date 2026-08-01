@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from math import ldexp
 from types import TracebackType
@@ -10,8 +11,16 @@ import httpx
 from pydantic import SecretStr, ValidationError
 
 from scalper.core.config import Settings
+from scalper.core.enums import OptionRight
 from scalper.core.time import EASTERN, require_aware, utc_now
-from scalper.domain.market import Bar, OptionExpiration, Quote
+from scalper.domain.market import (
+    Bar,
+    OptionChain,
+    OptionContract,
+    OptionExpiration,
+    OptionGreeks,
+    Quote,
+)
 
 from .errors import (
     PublicAuthenticationError,
@@ -24,6 +33,8 @@ from .errors import (
 from .models import (
     PublicAccessTokenResponse,
     PublicBarsResponse,
+    PublicOptionChainContractPayload,
+    PublicOptionChainResponse,
     PublicOptionExpirationsResponse,
     PublicQuotesResponse,
 )
@@ -250,6 +261,102 @@ class PublicMarketDataClient:
             )
         except ValidationError as exc:
             raise PublicResponseError("Public option-expirations response was unusable") from exc
+
+    async def get_option_chain(
+        self,
+        symbol: str,
+        expiration: date,
+    ) -> OptionChain:
+        """Retrieve one Public-listed option chain."""
+
+        normalized_symbol = symbol.strip().upper()
+        if not normalized_symbol:
+            raise ValueError("symbol is required")
+        if isinstance(expiration, datetime) or not isinstance(expiration, date):
+            raise TypeError("expiration must be a date")
+
+        current_eastern_date = self._now().astimezone(EASTERN).date()
+        if expiration < current_eastern_date:
+            raise ValueError("expiration cannot be in the past")
+
+        response = await self.request(
+            "POST",
+            f"/userapigateway/marketdata/{self._account_id}/option-chain",
+            json_body={
+                "instrument": {
+                    "symbol": normalized_symbol,
+                    "type": "EQUITY",
+                },
+                "expirationDate": expiration.isoformat(),
+            },
+        )
+        received_timestamp = self._now()
+
+        try:
+            payload = response.json()
+            chain_response = PublicOptionChainResponse.model_validate(payload)
+        except (ValueError, ValidationError) as exc:
+            raise PublicResponseError("Public option-chain response was invalid") from exc
+
+        if chain_response.base_symbol.upper() != normalized_symbol:
+            raise PublicResponseError(
+                "Public option-chain response symbol did not match the request"
+            )
+
+        public_contracts = (*chain_response.calls, *chain_response.puts)
+        contract_symbols = [contract.instrument.symbol.upper() for contract in public_contracts]
+        if len(contract_symbols) != len(set(contract_symbols)):
+            raise PublicResponseError(
+                "Public option-chain response contained duplicate option symbols"
+            )
+
+        calls = tuple(
+            sorted(
+                (
+                    self._map_option_chain_contract(
+                        contract,
+                        underlying=normalized_symbol,
+                        expiration=expiration,
+                        right=OptionRight.CALL,
+                        received_timestamp=received_timestamp,
+                    )
+                    for contract in chain_response.calls
+                ),
+                key=lambda contract: (contract.strike, contract.symbol),
+            )
+        )
+        puts = tuple(
+            sorted(
+                (
+                    self._map_option_chain_contract(
+                        contract,
+                        underlying=normalized_symbol,
+                        expiration=expiration,
+                        right=OptionRight.PUT,
+                        received_timestamp=received_timestamp,
+                    )
+                    for contract in chain_response.puts
+                ),
+                key=lambda contract: (contract.strike, contract.symbol),
+            )
+        )
+
+        quote_timestamps = [contract.quote.source_timestamp for contract in (*calls, *puts)]
+        # Public supplies no chain-level timestamp. Use the oldest mapped quote so the
+        # canonical chain never appears fresher than one of its contracts.
+        source_timestamp = min(quote_timestamps, default=received_timestamp)
+
+        try:
+            return OptionChain(
+                underlying=normalized_symbol,
+                expiration=expiration,
+                calls=calls,
+                puts=puts,
+                source_timestamp=source_timestamp,
+                received_timestamp=received_timestamp,
+            )
+        except ValidationError as exc:
+            raise PublicResponseError("Public option-chain response was unusable") from exc
 
     async def get_quote(self, symbol: str) -> Quote:
         """Retrieve and map one underlying-equity quote."""
@@ -508,6 +615,116 @@ class PublicMarketDataClient:
 
     def _now(self) -> datetime:
         return require_aware(self._clock()).astimezone(UTC)
+
+    def _map_option_chain_contract(
+        self,
+        public_contract: PublicOptionChainContractPayload,
+        *,
+        underlying: str,
+        expiration: date,
+        right: OptionRight,
+        received_timestamp: datetime,
+    ) -> OptionContract:
+        if public_contract.outcome != "SUCCESS":
+            raise PublicResponseError(
+                "Public option-chain response contained an unsuccessful contract"
+            )
+
+        symbol = public_contract.instrument.symbol
+        osi_expiration, osi_right, osi_strike = self._parse_osi_symbol(symbol)
+        if osi_expiration != expiration:
+            raise PublicResponseError(
+                "Public option-chain contract expiration did not match the request"
+            )
+        if osi_right != right:
+            raise PublicResponseError(
+                "Public option-chain contract right did not match its chain side"
+            )
+        if osi_strike != public_contract.option_details.strike_price:
+            raise PublicResponseError(
+                "Public option-chain contract strike did not match its option symbol"
+            )
+
+        source_timestamp = min(
+            public_contract.bid_timestamp,
+            public_contract.ask_timestamp,
+        ).astimezone(UTC)
+
+        try:
+            public_greeks = public_contract.option_details.greeks
+            greeks = None
+            if public_greeks is not None:
+                greeks = OptionGreeks(
+                    delta=public_greeks.delta,
+                    gamma=public_greeks.gamma,
+                    theta=public_greeks.theta,
+                    vega=public_greeks.vega,
+                    rho=public_greeks.rho,
+                    implied_volatility=public_greeks.implied_volatility,
+                )
+
+            return OptionContract(
+                symbol=symbol,
+                underlying=underlying,
+                expiration=expiration,
+                strike=public_contract.option_details.strike_price,
+                right=right,
+                quote=Quote(
+                    symbol=symbol,
+                    bid=public_contract.bid,
+                    ask=public_contract.ask,
+                    bid_size=public_contract.bid_size,
+                    ask_size=public_contract.ask_size,
+                    source_timestamp=source_timestamp,
+                    received_timestamp=received_timestamp,
+                ),
+                volume=public_contract.volume,
+                open_interest=public_contract.open_interest,
+                greeks=greeks,
+                tick_size=None,
+            )
+        except ValidationError as exc:
+            raise PublicResponseError("Public option-chain response was unusable") from exc
+
+    @staticmethod
+    def _parse_osi_symbol(symbol: str) -> tuple[date, OptionRight, Decimal]:
+        normalized = symbol.strip().upper()
+        if len(normalized) <= 15 or not normalized[:-15]:
+            raise PublicResponseError(
+                "Public option-chain response contained an invalid option symbol"
+            )
+
+        expiration_code = normalized[-15:-9]
+        right_code = normalized[-9]
+        strike_code = normalized[-8:]
+        if (
+            not expiration_code.isdigit()
+            or right_code not in {"C", "P"}
+            or not strike_code.isdigit()
+        ):
+            raise PublicResponseError(
+                "Public option-chain response contained an invalid option symbol"
+            )
+
+        try:
+            expiration = date(
+                2000 + int(expiration_code[:2]),
+                int(expiration_code[2:4]),
+                int(expiration_code[4:6]),
+            )
+        except ValueError as exc:
+            raise PublicResponseError(
+                "Public option-chain response contained an invalid option symbol"
+            ) from exc
+
+        right = OptionRight.CALL if right_code == "C" else OptionRight.PUT
+        strike = Decimal(strike_code) / Decimal("1000")
+        if strike <= 0:
+            raise PublicResponseError(
+                "Public option-chain response contained an invalid option symbol"
+            )
+
+        return expiration, right, strike
 
     @classmethod
     def _normalize_five_minute_timeframe(cls, value: str) -> str:
