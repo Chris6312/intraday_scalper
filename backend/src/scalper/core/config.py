@@ -1,7 +1,7 @@
 from decimal import Decimal
 from functools import lru_cache
 
-from pydantic import SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from scalper.core.enums import ExecutionBrokerType, ExecutionMode, MarketDataProviderType
@@ -30,7 +30,17 @@ class Settings(BaseSettings):
     public_api_base_url: str = "https://api.public.com"
     public_api_secret: SecretStr | None = None
     public_account_id: SecretStr | None = None
-    public_access_token_ttl_minutes: int = 15
+
+    public_access_token_ttl_minutes: int = Field(default=15, gt=0)
+    public_token_refresh_leeway_seconds: int = Field(default=30, ge=0)
+
+    public_connect_timeout_seconds: float = Field(default=5.0, gt=0)
+    public_read_timeout_seconds: float = Field(default=10.0, gt=0)
+    public_write_timeout_seconds: float = Field(default=10.0, gt=0)
+    public_pool_timeout_seconds: float = Field(default=5.0, gt=0)
+
+    public_max_retries: int = Field(default=2, ge=0)
+    public_retry_base_delay_seconds: float = Field(default=0.25, ge=0)
 
     paper_starting_balance: Decimal = Decimal("25000.00")
     strategy_buying_power_fraction: Decimal = Decimal("0.50")
